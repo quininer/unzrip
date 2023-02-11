@@ -7,7 +7,7 @@ use memchr::memmem::rfind;
 use util::{ Eof, take, read_u16, read_u32 };
 
 
-pub mod compress_method {
+pub mod compress {
     pub const STORE: u16   = 0;
     pub const DEFLATE: u16 = 8;
 }

@@ -1,12 +1,14 @@
 use std::{ cmp, env, io };
 use std::fs::File;
+use std::borrow::Cow;
 use anyhow::Context;
 use camino::{ Utf8Path as Path, Utf8PathBuf as PathBuf };
 use argh::FromArgs;
 use rayon::prelude::*;
 use memmap2::MmapOptions;
 use flate2::bufread::DeflateDecoder;
-use zip_parser::{ compress_method, ZipArchive, CentralFileHeader };
+use chardetng::EncodingDetector;
+use zip_parser::{ compress, ZipArchive, CentralFileHeader };
 
 
 /// UnPiz - list, test and extract compressed files in a ZIP archive
@@ -52,14 +54,25 @@ fn unpiz(path: &Path, target: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn do_entry(zip: &ZipArchive<'_>, cfh: &CentralFileHeader<'_>, target: &Path) -> anyhow::Result<()> {
+fn do_entry(
+    zip: &ZipArchive<'_>,
+    cfh: &CentralFileHeader<'_>,
+    target: &Path
+) -> anyhow::Result<()> {
     let (_lfh, buf) = zip.read(cfh)?;
 
     if cfh.gp_flag & 1 != 0 {
         anyhow::bail!("encrypt is not supported");
     }
 
-    let (name, ..) = encoding_rs::UTF_8.decode(cfh.name);
+    let name = if let Ok(name) = std::str::from_utf8(cfh.name) {
+        Cow::Borrowed(name)
+    } else {
+        let mut encoding_detector = EncodingDetector::new();
+        encoding_detector.feed(cfh.name, true);
+        let (name, ..) = encoding_detector.guess(None, true).decode(cfh.name);
+        name
+    };
     let path = Path::new(&*name);
 
     if !path.is_relative() {
@@ -69,8 +82,8 @@ fn do_entry(zip: &ZipArchive<'_>, cfh: &CentralFileHeader<'_>, target: &Path) ->
     let target = target.join(path);
 
     let mut reader = match cfh.method {
-        compress_method::STORE => Reader::None(buf),
-        compress_method::DEFLATE => Reader::Deflate(DeflateDecoder::new(buf)),
+        compress::STORE => Reader::None(buf),
+        compress::DEFLATE => Reader::Deflate(DeflateDecoder::new(buf)),
         _ => anyhow::bail!("compress method is not supported: {}", cfh.method)
     };
 

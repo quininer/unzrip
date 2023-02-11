@@ -48,13 +48,13 @@ impl From<Eof> for Error {
 
 impl EocdRecord<'_> {
     fn find(buf: &[u8]) -> Result<EocdRecord<'_>, Error> {
-        const EOCDR_SIGNATURE: &[u8; 4] = &[b'P', b'K', 5, 4];
+        const EOCDR_SIGNATURE: &[u8; 4] = &[b'P', b'K', 5, 6];
         const MAX_BACK_OFFSET: usize = 1024 * 128;
 
         let eocdr_buf = {
-            let max_back_buf = take(buf, MAX_BACK_OFFSET)
-                .ok()
-                .map(|(_, buf)| buf)
+            let max_back_buf = buf.len()
+                .checked_sub(MAX_BACK_OFFSET)
+                .map(|pos| &buf[pos..])
                 .unwrap_or(buf);
 
             let eocdr_offset = rfind(max_back_buf, EOCDR_SIGNATURE)

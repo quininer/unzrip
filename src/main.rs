@@ -59,17 +59,14 @@ fn do_entry(zip: &ZipArchive<'_>, cfh: &CentralFileHeader<'_>, target: &Path) ->
         anyhow::bail!("encrypt is not supported");
     }
 
-    let target = {
-        let (name, ..) = encoding_rs::UTF_8.decode(cfh.name);
-        let path = Path::new(&*name);
+    let (name, ..) = encoding_rs::UTF_8.decode(cfh.name);
+    let path = Path::new(&*name);
 
-        if !path.is_relative() {
-            anyhow::bail!("must relative path");
-        }
+    if !path.is_relative() {
+        anyhow::bail!("must relative path");
+    }
 
-        target.join(path)
-    };
-
+    let target = target.join(path);
 
     let mut reader = match cfh.method {
         compress_method::STORE => Reader::None(buf),
@@ -84,6 +81,8 @@ fn do_entry(zip: &ZipArchive<'_>, cfh: &CentralFileHeader<'_>, target: &Path) ->
         .open(&target)?;
 
     io::copy(&mut reader, &mut target)?;
+
+    println!("export: {}", path);
 
     Ok(())
 }

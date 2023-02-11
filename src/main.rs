@@ -7,6 +7,7 @@ use argh::FromArgs;
 use rayon::prelude::*;
 use memmap2::MmapOptions;
 use flate2::bufread::DeflateDecoder;
+use zstd::stream::read::Decoder as ZstdDecoder;
 use chardetng::EncodingDetector;
 use zip_parser::{ compress, ZipArchive, CentralFileHeader };
 
@@ -84,6 +85,7 @@ fn do_entry(
     let mut reader = match cfh.method {
         compress::STORE => Reader::None(buf),
         compress::DEFLATE => Reader::Deflate(DeflateDecoder::new(buf)),
+        compress::ZSTD => Reader::Zstd(ZstdDecoder::with_buffer(buf)?),
         _ => anyhow::bail!("compress method is not supported: {}", cfh.method)
     };
 
@@ -102,15 +104,16 @@ fn do_entry(
 
 enum Reader<'a> {
     None(&'a [u8]),
-    Deflate(DeflateDecoder<&'a [u8]>)
+    Deflate(DeflateDecoder<&'a [u8]>),
+    Zstd(ZstdDecoder<'static, &'a [u8]>)
 }
 
 impl io::Read for Reader<'_> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
             Reader::None(reader) => io::Read::read(reader, buf),
-            Reader::Deflate(reader) => io::Read::read(reader, buf)
+            Reader::Deflate(reader) => io::Read::read(reader, buf),
+            Reader::Zstd(reader) => io::Read::read(reader, buf)
         }
-
     }
 }

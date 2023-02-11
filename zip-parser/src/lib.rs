@@ -7,6 +7,11 @@ use memchr::memmem::rfind;
 use util::{ Eof, take, read_u16, read_u32 };
 
 
+pub mod compress_method {
+    pub const STORE: u16   = 0;
+    pub const DEFLATE: u16 = 8;
+}
+
 #[non_exhaustive]
 pub struct EocdRecord<'a> {
     pub disk_nbr: u16,

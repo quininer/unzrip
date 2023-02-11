@@ -1,11 +1,11 @@
-use std::env;
+use std::{ cmp, env };
 use std::fs::File;
 use anyhow::Context;
 use camino::{ Utf8Path as Path, Utf8PathBuf as PathBuf };
 use argh::FromArgs;
 use rayon::prelude::*;
 use memmap2::MmapOptions;
-use piz::read::{ ZipArchive, FileMetadata };
+use zip_parser::{ ZipArchive, CentralFileHeader };
 
 
 /// UnPiz - list, test and extract compressed files in a ZIP archive
@@ -36,28 +36,23 @@ fn unpiz(path: &Path, target: &Path) -> anyhow::Result<()> {
         MmapOptions::new().map_copy_read_only(&fd)?
     };
 
-    let zip = ZipArchive::new(&buf)?;
+    let zip = ZipArchive::parse(&buf)?;
+    let len: usize = zip.eocdr().cd_entries.try_into()?;
+    let len = cmp::min(len, 128);
 
-    zip.entries()
+    zip.entries()?
+        .try_fold(Vec::with_capacity(len), |mut acc, e| e.map(|e| {
+            acc.push(e);
+            acc
+        }))?
         .par_iter()
-        .try_for_each(|metadata| read_entrie(&zip, &metadata, target))?;
+        .try_for_each(|metadata| do_entry(&zip, &metadata, target))?;
 
     Ok(())
 }
 
-fn read_entrie(zip: &ZipArchive<'_>, metadata: &FileMetadata<'_>, target: &Path) -> anyhow::Result<()> {
-    if metadata.path.is_absolute() {
-        anyhow::bail!("absolute not supported");
-    }
-
-    if metadata.encrypted {
-        anyhow::bail!("encrypt not supported");
-    }
-
-
-    let entrie = zip.read(metadata)?;
-
-
+fn do_entry(zip: &ZipArchive<'_>, metadata: &CentralFileHeader<'_>, target: &Path) -> anyhow::Result<()> {
+    let (entrie, buf) = zip.read(metadata)?;
 
     Ok(())
 }

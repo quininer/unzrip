@@ -2,6 +2,7 @@
 
 mod util;
 
+use thiserror::Error;
 use memchr::memmem::rfind;
 use util::{ Eof, take, read_u16, read_u32 };
 
@@ -17,12 +18,19 @@ pub struct EocdRecord<'a> {
     pub comment: &'a [u8]
 }
 
+#[derive(Error, Debug)]
 pub enum Error {
+    #[error("eof")]
     Eof,
+    #[error("bad eocdr magic number")]
     BadEocdr,
+    #[error("bad cfh magic number")]
     BadCfh,
+    #[error("bad lfh magic number")]
     BadLfh,
-    EocdrUnsupported,
+    #[error("not supported")]
+    Unsupported,
+    #[error("offset overflow")]
     OffsetOverflow
 }
 
@@ -209,23 +217,27 @@ impl ZipArchive<'_> {
             || eocdr.cd_start_disk != 0
             || eocdr.disk_cd_entries != eocdr.cd_entries
         {
-            return Err(Error::EocdrUnsupported);
+            return Err(Error::Unsupported);
         }
 
         Ok(ZipArchive { buf, eocdr })
     }
 
-    pub fn members(&self) -> Result<ZipMembers<'_>, Error> {
+    pub fn eocdr(&self) -> &EocdRecord<'_> {
+        &self.eocdr
+    }
+
+    pub fn entries(&self) -> Result<ZipEntries<'_>, Error> {
         let offset: usize = self.eocdr.cd_offset.try_into()
             .map_err(|_| Error::OffsetOverflow)?;
         let buf = self.buf.get(offset..)
             .ok_or(Error::OffsetOverflow)?;
         let count = self.eocdr.cd_entries;
 
-        Ok(ZipMembers { buf, count })
+        Ok(ZipEntries { buf, count })
     }
 
-    pub fn get<'a>(&'a self, cfh: &CentralFileHeader) -> Result<(LocalFileHeader<'a>, &'a [u8]), Error> {
+    pub fn read<'a>(&'a self, cfh: &CentralFileHeader) -> Result<(LocalFileHeader<'a>, &'a [u8]), Error> {
         let offset: usize = cfh.lfh_offset.try_into()
             .map_err(|_| Error::OffsetOverflow)?;
         let buf = self.buf.get(offset..)
@@ -241,12 +253,12 @@ impl ZipArchive<'_> {
     }
 }
 
-pub struct ZipMembers<'a> {
+pub struct ZipEntries<'a> {
     buf: &'a [u8],
     count: u16
 }
 
-impl<'a> Iterator for ZipMembers<'a> {
+impl<'a> Iterator for ZipEntries<'a> {
     type Item = Result<CentralFileHeader<'a>, Error>;
 
     fn next(&mut self) -> Option<Self::Item> {

@@ -13,12 +13,13 @@ pub mod compress_method {
 }
 
 #[non_exhaustive]
+#[derive(Debug)]
 pub struct EocdRecord<'a> {
     pub disk_nbr: u16,
     pub cd_start_disk: u16,
     pub disk_cd_entries: u16,
     pub cd_entries: u16,
-    pub cd_size: u16,
+    pub cd_size: u32,
     pub cd_offset: u32,
     pub comment: &'a [u8]
 }
@@ -59,15 +60,16 @@ impl EocdRecord<'_> {
 
             let eocdr_offset = rfind(max_back_buf, EOCDR_SIGNATURE)
                 .ok_or(Error::BadEocdr)?;
-            &buf[eocdr_offset..]
+            &max_back_buf[eocdr_offset..]
         };
 
         let input = eocdr_buf;
+        let (input, _) = take(input, EOCDR_SIGNATURE.len())?;
         let (input, disk_nbr) = read_u16(input)?;
         let (input, cd_start_disk) = read_u16(input)?;
         let (input, disk_cd_entries) = read_u16(input)?;
         let (input, cd_entries) = read_u16(input)?;
-        let (input, cd_size) = read_u16(input)?;
+        let (input, cd_size) = read_u32(input)?;
         let (input, cd_offset) = read_u32(input)?;
         let (input, comment_len) = read_u16(input)?;
         let (_input, comment) = take(input, comment_len.into())?;
@@ -85,6 +87,7 @@ impl EocdRecord<'_> {
 }
 
 #[non_exhaustive]
+#[derive(Debug)]
 pub struct CentralFileHeader<'a> {
     pub made_by_ver: u16,
     pub extract_ver: u16,
@@ -157,6 +160,7 @@ impl CentralFileHeader<'_> {
 }
 
 #[non_exhaustive]
+#[derive(Debug)]
 pub struct LocalFileHeader<'a> {
     pub extract_ver: u16,
     pub gp_flag: u16,

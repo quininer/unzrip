@@ -71,7 +71,7 @@ fn do_entry(
     } else {
         let mut encoding_detector = EncodingDetector::new();
         encoding_detector.feed(cfh.name, true);
-        let (name, ..) = encoding_detector.guess(None, true).decode(cfh.name);
+        let (name, ..) = encoding_detector.guess(None, false).decode(cfh.name);
         name
     };
     let path = Path::new(&*name);
@@ -108,13 +108,13 @@ fn do_entry(
     Ok(())
 }
 
-enum Reader<'a> {
-    None(&'a [u8]),
-    Deflate(DeflateDecoder<&'a [u8]>),
-    Zstd(ZstdDecoder<'static, &'a [u8]>)
+enum Reader<R: io::BufRead> {
+    None(R),
+    Deflate(DeflateDecoder<R>),
+    Zstd(ZstdDecoder<'static, R>)
 }
 
-impl io::Read for Reader<'_> {
+impl<R: io::BufRead> io::Read for Reader<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
             Reader::None(reader) => io::Read::read(reader, buf),

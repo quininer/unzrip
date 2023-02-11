@@ -1,0 +1,23 @@
+[package]
+name = "unzipx"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[workspace]
+members = [ "zip-parser" ]
+
+
+[dependencies]
+zip-parser = { path = "zip-parser" }
+
+anyhow = "1"
+argh = "0.1"
+rayon = "1"
+camino = "1"
+memmap2 = "0.5"
+piz = "0.5"
+crc32fast = "1"
+flate2 = "1"
+encoding_rs = "0.8"

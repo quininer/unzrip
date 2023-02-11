@@ -83,7 +83,13 @@ fn do_entry(
     let target = target.join(path);
 
     let mut reader = match cfh.method {
-        compress::STORE => Reader::None(buf),
+        compress::STORE => {
+            if crc32fast::hash(buf) != cfh.crc32 {
+                anyhow::bail!("bad crc32: {}", path);
+            }
+
+            Reader::None(buf)
+        },
         compress::DEFLATE => Reader::Deflate(DeflateDecoder::new(buf)),
         compress::ZSTD => Reader::Zstd(ZstdDecoder::with_buffer(buf)?),
         _ => anyhow::bail!("compress method is not supported: {}", cfh.method)

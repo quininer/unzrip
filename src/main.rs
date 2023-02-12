@@ -96,7 +96,8 @@ fn do_entry(
         .write(true)
         .append(true)
         .create_new(true)
-        .open(&target)?;
+        .open(&target)
+        .with_context(|| path.to_owned())?;
 
     let mtime = {
         let time = dos2time(cfh.mod_date, cfh.mod_time)?.assume_utc();

@@ -1,3 +1,5 @@
+mod util;
+
 use std::{ cmp, env, io };
 use std::fs::File;
 use std::borrow::Cow;
@@ -10,9 +12,10 @@ use flate2::bufread::DeflateDecoder;
 use zstd::stream::read::Decoder as ZstdDecoder;
 use chardetng::EncodingDetector;
 use zip_parser::{ compress, ZipArchive, CentralFileHeader };
+use util::{ Decoder, Crc32Checker, dos2time };
 
 
-/// UnPiz - list, test and extract compressed files in a ZIP archive
+/// unzipx - list, test and extract compressed files in a ZIP archive
 #[derive(FromArgs)]
 struct Options {
     /// path of the ZIP archive(s).
@@ -24,17 +27,16 @@ fn main() -> anyhow::Result<()> {
     let options: Options = argh::from_env();
 
     let target = env::current_dir()?;
-    let target = Path::from_path(&target)
-        .context("must utf8 path")?;
+    let target = Path::from_path(&target).context("must utf8 path")?;
 
     for file in options.file.iter() {
-        unpiz(file, &target)?;
+        unzip(file, &target)?;
     }
 
     Ok(())
 }
 
-fn unpiz(path: &Path, target: &Path) -> anyhow::Result<()> {
+fn unzip(path: &Path, target: &Path) -> anyhow::Result<()> {
     let fd = File::open(path)?;
     let buf = unsafe {
         MmapOptions::new().map_copy_read_only(&fd)?
@@ -77,23 +79,18 @@ fn do_entry(
     let path = Path::new(&*name);
 
     if !path.is_relative() {
-        anyhow::bail!("must relative path");
+        anyhow::bail!("must relative path: {:?}", path);
     }
 
     let target = target.join(path);
 
-    let mut reader = match cfh.method {
-        compress::STORE => {
-            if crc32fast::hash(buf) != cfh.crc32 {
-                anyhow::bail!("bad crc32: {}", path);
-            }
-
-            Reader::None(buf)
-        },
-        compress::DEFLATE => Reader::Deflate(DeflateDecoder::new(buf)),
-        compress::ZSTD => Reader::Zstd(ZstdDecoder::with_buffer(buf)?),
+    let reader = match cfh.method {
+        compress::STORE => Decoder::None(buf),
+        compress::DEFLATE => Decoder::Deflate(DeflateDecoder::new(buf)),
+        compress::ZSTD => Decoder::Zstd(ZstdDecoder::with_buffer(buf)?),
         _ => anyhow::bail!("compress method is not supported: {}", cfh.method)
     };
+    let mut reader = Crc32Checker::new(reader, cfh.crc32);
 
     let mut target = File::options()
         .write(true)
@@ -101,25 +98,18 @@ fn do_entry(
         .create_new(true)
         .open(&target)?;
 
+    let mtime = {
+        let time = dos2time(cfh.mod_date, cfh.mod_time)?.assume_utc();
+        let unix_timestamp = time.unix_timestamp();
+        let nanos = time.nanosecond();
+        filetime::FileTime::from_unix_time(unix_timestamp, nanos)
+    };
+
     io::copy(&mut reader, &mut target)?;
 
-    println!("export: {}", path);
+    filetime::set_file_handle_times(&target, None, Some(mtime))?;
+
+    println!("export: {:?}", path);
 
     Ok(())
-}
-
-enum Reader<R: io::BufRead> {
-    None(R),
-    Deflate(DeflateDecoder<R>),
-    Zstd(ZstdDecoder<'static, R>)
-}
-
-impl<R: io::BufRead> io::Read for Reader<R> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        match self {
-            Reader::None(reader) => io::Read::read(reader, buf),
-            Reader::Deflate(reader) => io::Read::read(reader, buf),
-            Reader::Zstd(reader) => io::Read::read(reader, buf)
-        }
-    }
 }

@@ -12,13 +12,26 @@ members = [ "zip-parser" ]
 [dependencies]
 zip-parser = { path = "zip-parser" }
 
+# tools
 anyhow = "1"
 argh = "0.1"
-rayon = "1"
 camino = "1"
+
+# fast
+rayon = "1"
 memmap2 = "0.5"
+
+# check
 crc32fast = "1"
+
+# compress
 flate2 = "1"
 zstd = "0.12"
+
+# encoding
 encoding_rs = "0.8"
 chardetng = "0.1"
+
+# time
+time = "0.3"
+filetime = "0.2"

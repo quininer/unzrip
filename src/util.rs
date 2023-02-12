@@ -1,4 +1,4 @@
-use std::io;
+use std::{ io, fs };
 use anyhow::Context;
 use flate2::bufread::DeflateDecoder;
 use zstd::stream::read::Decoder as ZstdDecoder;
@@ -101,4 +101,36 @@ pub fn path_join(base: &Path, path: &Path) -> PathBuf {
             (depth, sum)
         });
     path
+}
+
+pub fn path_open(path: &Path) -> io::Result<fs::File> {
+    match fs::File::options()
+        .write(true)
+        .append(true)
+        .create_new(true)
+        .open(path)
+    {
+        Ok(fd) => Ok(fd),
+        Err(err) => {
+            // parent dir not found
+            if err.kind() == io::ErrorKind::NotFound {
+                if let Some(dir) = path.parent() {
+                    fs::create_dir_all(dir)
+                        .or_else(|err| if err.kind() == io::ErrorKind::AlreadyExists {
+                            Ok(())
+                        } else {
+                            Err(err)
+                        })?;
+                    let fd = fs::File::options()
+                        .write(true)
+                        .append(true)
+                        .create_new(true)
+                        .open(path)?;
+                    return Ok(fd);
+                }
+            }
+
+            Err(err)
+        }
+    }
 }

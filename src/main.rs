@@ -1,7 +1,6 @@
 mod util;
 
-use std::{ cmp, env, io };
-use std::fs::File;
+use std::{ cmp, env, io, fs };
 use std::borrow::Cow;
 use anyhow::Context;
 use camino::{ Utf8Path as Path, Utf8PathBuf as PathBuf };
@@ -12,7 +11,7 @@ use flate2::bufread::DeflateDecoder;
 use zstd::stream::read::Decoder as ZstdDecoder;
 use chardetng::EncodingDetector;
 use zip_parser::{ compress, ZipArchive, CentralFileHeader };
-use util::{ Decoder, Crc32Checker, dos2time, path_join };
+use util::{ Decoder, Crc32Checker, dos2time, path_join, path_open };
 
 
 /// unzipx - extract compressed files in a ZIP archive
@@ -45,7 +44,7 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn unzip(path: &Path, target: &Path) -> anyhow::Result<()> {
-    let fd = File::open(path)?;
+    let fd = fs::File::open(path)?;
     let buf = unsafe {
         MmapOptions::new().map_copy_read_only(&fd)?
     };
@@ -90,6 +89,37 @@ fn do_entry(
         anyhow::bail!("must relative path: {:?}", path);
     }
 
+    if name.ends_with('/')
+        && cfh.method == compress::STORE
+        && buf.is_empty()
+    {
+        do_dir(target, path)?
+    } else {
+        do_file(cfh, target, path, buf)?;
+    }
+
+    Ok(())
+}
+
+fn do_dir(target: &Path, path: &Path) -> anyhow::Result<()> {
+    let target = path_join(target, path);
+
+    fs::create_dir_all(target)
+        .or_else(|err| if err.kind() == io::ErrorKind::AlreadyExists {
+            Ok(())
+        } else {
+            Err(err)
+        })
+        .with_context(|| path.to_owned())?;
+    Ok(())
+}
+
+fn do_file(
+    cfh: &CentralFileHeader,
+    target: &Path,
+    path: &Path,
+    buf: &[u8]
+) -> anyhow::Result<()> {
     let target = path_join(target, path);
 
     let reader = match cfh.method {
@@ -100,19 +130,14 @@ fn do_entry(
     };
     let mut reader = Crc32Checker::new(reader, cfh.crc32);
 
-    let mut target = File::options()
-        .write(true)
-        .append(true)
-        .create_new(true)
-        .open(&target)
-        .with_context(|| path.to_owned())?;
-
     let mtime = {
         let time = dos2time(cfh.mod_date, cfh.mod_time)?.assume_utc();
         let unix_timestamp = time.unix_timestamp();
         let nanos = time.nanosecond();
         filetime::FileTime::from_unix_time(unix_timestamp, nanos)
     };
+
+    let mut target = path_open(&target).with_context(|| path.to_owned())?;
 
     io::copy(&mut reader, &mut target)?;
 

@@ -104,12 +104,10 @@ pub fn path_join(base: &Path, path: &Path) -> PathBuf {
 }
 
 pub fn path_open(path: &Path) -> io::Result<fs::File> {
-    match fs::File::options()
-        .write(true)
-        .append(true)
-        .create_new(true)
-        .open(path)
-    {
+    let mut open_options = fs::File::options();
+    open_options.write(true).append(true).create_new(true);
+
+    match open_options.open(path) {
         Ok(fd) => Ok(fd),
         Err(err) => {
             // parent dir not found
@@ -121,12 +119,7 @@ pub fn path_open(path: &Path) -> io::Result<fs::File> {
                         } else {
                             Err(err)
                         })?;
-                    let fd = fs::File::options()
-                        .write(true)
-                        .append(true)
-                        .create_new(true)
-                        .open(path)?;
-                    return Ok(fd);
+                    return open_options.open(path);
                 }
             }
 

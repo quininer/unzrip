@@ -1,6 +1,7 @@
 mod util;
 
-use std::{ cmp, env, io, fs };
+use std::{ cmp, env, fs };
+use std::io::{ self, Read };
 use std::borrow::Cow;
 use anyhow::Context;
 use camino::{ Utf8Path as Path, Utf8PathBuf as PathBuf };
@@ -128,7 +129,7 @@ fn do_file(
         compress::ZSTD => Decoder::Zstd(ZstdDecoder::with_buffer(buf)?),
         _ => anyhow::bail!("compress method is not supported: {}", cfh.method)
     };
-    let mut reader = Crc32Checker::new(reader, cfh.crc32);
+    let reader = Crc32Checker::new(reader, cfh.crc32);
 
     let mtime = {
         let time = dos2time(cfh.mod_date, cfh.mod_time)?.assume_utc();
@@ -139,6 +140,8 @@ fn do_file(
 
     let mut fd = path_open(&target).with_context(|| path.to_owned())?;
 
+    // prevent zipbomb
+    let mut reader = reader.take(cfh.uncomp_size.into());
     io::copy(&mut reader, &mut fd)?;
 
     filetime::set_file_handle_times(&fd, None, Some(mtime))?;

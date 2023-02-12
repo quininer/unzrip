@@ -10,7 +10,7 @@ use memmap2::MmapOptions;
 use flate2::bufread::DeflateDecoder;
 use zstd::stream::read::Decoder as ZstdDecoder;
 use chardetng::EncodingDetector;
-use zip_parser::{ compress, ZipArchive, CentralFileHeader };
+use zip_parser::{ compress, system, ZipArchive, CentralFileHeader };
 use util::{ Decoder, Crc32Checker, dos2time, path_join, path_open };
 
 
@@ -137,11 +137,19 @@ fn do_file(
         filetime::FileTime::from_unix_time(unix_timestamp, nanos)
     };
 
-    let mut target = path_open(&target).with_context(|| path.to_owned())?;
+    let mut fd = path_open(&target).with_context(|| path.to_owned())?;
 
-    io::copy(&mut reader, &mut target)?;
+    io::copy(&mut reader, &mut fd)?;
 
-    filetime::set_file_handle_times(&target, None, Some(mtime))?;
+    filetime::set_file_handle_times(&fd, None, Some(mtime))?;
+
+    #[cfg(unix)]
+    if cfh.ext_attrs != 0 && cfh.made_by_ver >> 8 == system::UNIX {
+        use std::os::unix::fs::PermissionsExt;
+
+        let perm = fs::Permissions::from_mode(cfh.ext_attrs >> 16);
+        fd.set_permissions(perm)?;
+    }
 
     println!("export: {:?}", path);
 

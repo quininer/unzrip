@@ -13,6 +13,11 @@ pub mod compress {
     pub const ZSTD: u16    = 93;
 }
 
+pub mod system {
+    pub const DOS: u16 = 0;
+    pub const UNIX: u16 = 3;
+}
+
 #[non_exhaustive]
 #[derive(Debug)]
 pub struct EocdRecord<'a> {

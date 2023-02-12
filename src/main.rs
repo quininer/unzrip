@@ -12,7 +12,7 @@ use flate2::bufread::DeflateDecoder;
 use zstd::stream::read::Decoder as ZstdDecoder;
 use chardetng::EncodingDetector;
 use zip_parser::{ compress, ZipArchive, CentralFileHeader };
-use util::{ Decoder, Crc32Checker, dos2time };
+use util::{ Decoder, Crc32Checker, dos2time, path_join };
 
 
 /// unzipx - extract compressed files in a ZIP archive
@@ -90,7 +90,7 @@ fn do_entry(
         anyhow::bail!("must relative path: {:?}", path);
     }
 
-    let target = target.join(path);
+    let target = path_join(target, path);
 
     let reader = match cfh.method {
         compress::STORE => Decoder::None(buf),

@@ -2,6 +2,7 @@ use std::io;
 use anyhow::Context;
 use flate2::bufread::DeflateDecoder;
 use zstd::stream::read::Decoder as ZstdDecoder;
+use camino::{ Utf8Path as Path, Utf8PathBuf as PathBuf, Utf8Component as Component };
 
 
 pub enum Decoder<R: io::BufRead> {
@@ -82,4 +83,22 @@ pub fn dos2time(dos_date: u16, dos_time: u16)
     )?;
 
     Ok(date.with_time(time))
+}
+
+pub fn path_join(base: &Path, path: &Path) -> PathBuf {
+    let (_, path) = path.components()
+        .fold((0, base.to_path_buf()), |(mut depth, mut sum), next| {
+            match next {
+                Component::Normal(p) => {
+                    sum.push(p);
+                    depth += 1;
+                },
+                Component::ParentDir if depth > 0 => if sum.pop() {
+                    depth -= 1;
+                },
+                _ => ()
+            };
+            (depth, sum)
+        });
+    path
 }

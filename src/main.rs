@@ -15,19 +15,27 @@ use zip_parser::{ compress, ZipArchive, CentralFileHeader };
 use util::{ Decoder, Crc32Checker, dos2time };
 
 
-/// unzipx - list, test and extract compressed files in a ZIP archive
+/// unzipx - extract compressed files in a ZIP archive
 #[derive(FromArgs)]
 struct Options {
     /// path of the ZIP archive(s).
     #[argh(positional)]
     file: Vec<PathBuf>,
+
+    /// an optional directory to which to extract files.
+    #[argh(option, short = 'd')]
+    exdir: Option<PathBuf>
 }
 
 fn main() -> anyhow::Result<()> {
     let options: Options = argh::from_env();
 
-    let target = env::current_dir()?;
-    let target = Path::from_path(&target).context("must utf8 path")?;
+    let target = if let Some(exdir) = options.exdir {
+        exdir
+    } else {
+        let path = env::current_dir()?;
+        PathBuf::from_path_buf(path).ok().context("must utf8 path")?
+    };
 
     for file in options.file.iter() {
         unzip(file, &target)?;

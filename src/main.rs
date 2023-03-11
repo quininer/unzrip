@@ -10,6 +10,7 @@ use rayon::prelude::*;
 use memmap2::MmapOptions;
 use flate2::bufread::DeflateDecoder;
 use zstd::stream::read::Decoder as ZstdDecoder;
+use encoding_rs::Encoding;
 use chardetng::EncodingDetector;
 use zip_parser::{ compress, system, ZipArchive, CentralFileHeader };
 use util::{ Decoder, Crc32Checker, dos2time, path_join, path_open };
@@ -24,7 +25,11 @@ struct Options {
 
     /// an optional directory to which to extract files.
     #[argh(option, short = 'd')]
-    exdir: Option<PathBuf>
+    exdir: Option<PathBuf>,
+
+    /// specify character set used to decode filename, which will be automatically detected by default.
+    #[argh(option, short = 'O')]
+    charset: Option<String>
 }
 
 fn main() -> anyhow::Result<()> {
@@ -36,15 +41,20 @@ fn main() -> anyhow::Result<()> {
         let path = env::current_dir()?;
         PathBuf::from_path_buf(path).ok().context("must utf8 path")?
     };
+    let charset = if let Some(label) = options.charset {
+        Some(Encoding::for_label(label.as_bytes()).context("invalid encoding label")?)
+    } else {
+        None
+    };
 
     for file in options.file.iter() {
-        unzip(&target_dir, file)?;
+        unzip(charset, &target_dir, file)?;
     }
 
     Ok(())
 }
 
-fn unzip(target_dir: &Path, path: &Path) -> anyhow::Result<()> {
+fn unzip(charset: Option<&'static Encoding>, target_dir: &Path, path: &Path) -> anyhow::Result<()> {
     println!("Archive: {}", path);
 
     let fd = fs::File::open(path)?;
@@ -62,12 +72,13 @@ fn unzip(target_dir: &Path, path: &Path) -> anyhow::Result<()> {
             acc
         }))?
         .par_iter()
-        .try_for_each(|cfh| do_entry(&zip, &cfh, target_dir))?;
+        .try_for_each(|cfh| do_entry(charset, &zip, &cfh, target_dir))?;
 
     Ok(())
 }
 
 fn do_entry(
+    charset: Option<&'static Encoding>,
     zip: &ZipArchive<'_>,
     cfh: &CentralFileHeader<'_>,
     target_dir: &Path
@@ -78,7 +89,10 @@ fn do_entry(
         anyhow::bail!("encrypt is not supported");
     }
 
-    let name = if let Ok(name) = std::str::from_utf8(cfh.name) {
+    let name = if let Some(encoding) = charset {
+        let (name, ..) = encoding.decode(cfh.name);
+        name
+    } else if let Ok(name) = std::str::from_utf8(cfh.name) {
         Cow::Borrowed(name)
     } else {
         let mut encoding_detector = EncodingDetector::new();

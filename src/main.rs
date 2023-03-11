@@ -30,7 +30,7 @@ struct Options {
 fn main() -> anyhow::Result<()> {
     let options: Options = argh::from_env();
 
-    let target = if let Some(exdir) = options.exdir {
+    let target_dir = if let Some(exdir) = options.exdir {
         exdir
     } else {
         let path = env::current_dir()?;
@@ -38,13 +38,15 @@ fn main() -> anyhow::Result<()> {
     };
 
     for file in options.file.iter() {
-        unzip(file, &target)?;
+        unzip(&target_dir, file)?;
     }
 
     Ok(())
 }
 
-fn unzip(path: &Path, target: &Path) -> anyhow::Result<()> {
+fn unzip(target_dir: &Path, path: &Path) -> anyhow::Result<()> {
+    println!("Archive: {}", path);
+
     let fd = fs::File::open(path)?;
     let buf = unsafe {
         MmapOptions::new().map_copy_read_only(&fd)?
@@ -60,7 +62,7 @@ fn unzip(path: &Path, target: &Path) -> anyhow::Result<()> {
             acc
         }))?
         .par_iter()
-        .try_for_each(|cfh| do_entry(&zip, &cfh, target))?;
+        .try_for_each(|cfh| do_entry(&zip, &cfh, target_dir))?;
 
     Ok(())
 }
@@ -68,7 +70,7 @@ fn unzip(path: &Path, target: &Path) -> anyhow::Result<()> {
 fn do_entry(
     zip: &ZipArchive<'_>,
     cfh: &CentralFileHeader<'_>,
-    target: &Path
+    target_dir: &Path
 ) -> anyhow::Result<()> {
     let (_lfh, buf) = zip.read(cfh)?;
 
@@ -94,16 +96,16 @@ fn do_entry(
         && cfh.method == compress::STORE
         && buf.is_empty()
     {
-        do_dir(target, path)?
+        do_dir(target_dir, path)?
     } else {
-        do_file(cfh, target, path, buf)?;
+        do_file(cfh, target_dir, path, buf)?;
     }
 
     Ok(())
 }
 
-fn do_dir(target: &Path, path: &Path) -> anyhow::Result<()> {
-    let target = path_join(target, path);
+fn do_dir(target_dir: &Path, path: &Path) -> anyhow::Result<()> {
+    let target = path_join(target_dir, path);
 
     fs::create_dir_all(target)
         .or_else(|err| if err.kind() == io::ErrorKind::AlreadyExists {
@@ -112,16 +114,19 @@ fn do_dir(target: &Path, path: &Path) -> anyhow::Result<()> {
             Err(err)
         })
         .with_context(|| path.to_owned())?;
+
+    println!("   creating: {}", path);
+
     Ok(())
 }
 
 fn do_file(
     cfh: &CentralFileHeader,
-    target: &Path,
+    target_dir: &Path,
     path: &Path,
     buf: &[u8]
 ) -> anyhow::Result<()> {
-    let target = path_join(target, path);
+    let target = path_join(target_dir, path);
 
     let reader = match cfh.method {
         compress::STORE => Decoder::None(buf),
@@ -154,7 +159,7 @@ fn do_file(
         fd.set_permissions(perm)?;
     }
 
-    println!("export: {:?}", path);
+    println!("  inflating: {}", path);
 
     Ok(())
 }

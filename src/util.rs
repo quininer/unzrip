@@ -85,22 +85,26 @@ pub fn dos2time(dos_date: u16, dos_time: u16)
     Ok(date.with_time(time))
 }
 
-pub fn path_join(base: &Path, path: &Path) -> PathBuf {
-    let (_, path) = path.components()
-        .fold((0, base.to_path_buf()), |(mut depth, mut sum), next| {
+pub fn path_join(base: &Path, path: &Path) -> anyhow::Result<PathBuf> {
+    // check path
+    path.components()
+        .try_fold(0u32, |mut depth, next| {
             match next {
-                Component::Normal(p) => {
-                    sum.push(p);
-                    depth += 1;
+                Component::RootDir | Component::Prefix(_) =>
+                    anyhow::bail!("must relative path: {:?}", path),
+                Component::Normal(_) => depth += 1,
+                Component::ParentDir => {
+                    depth = depth.checked_sub(1)
+                        .context("filename over the path limit")
+                        .with_context(|| path.to_owned())?;
                 },
-                Component::ParentDir if depth > 0 => if sum.pop() {
-                    depth -= 1;
-                },
-                _ => ()
-            };
-            (depth, sum)
-        });
-    path
+                Component::CurDir => ()
+            }
+
+            Ok(depth)
+        })?;
+
+    Ok(base.join(path))
 }
 
 pub fn path_open(path: &Path) -> io::Result<fs::File> {

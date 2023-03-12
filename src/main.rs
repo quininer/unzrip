@@ -119,7 +119,7 @@ fn do_entry(
 }
 
 fn do_dir(target_dir: &Path, path: &Path) -> anyhow::Result<()> {
-    let target = path_join(target_dir, path);
+    let target = path_join(target_dir, path)?;
 
     fs::create_dir_all(target)
         .or_else(|err| if err.kind() == io::ErrorKind::AlreadyExists {
@@ -140,7 +140,7 @@ fn do_file(
     path: &Path,
     buf: &[u8]
 ) -> anyhow::Result<()> {
-    let target = path_join(target_dir, path);
+    let target = path_join(target_dir, path)?;
 
     let reader = match cfh.method {
         compress::STORE => Decoder::None(buf),

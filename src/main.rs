@@ -13,7 +13,7 @@ use zstd::stream::read::Decoder as ZstdDecoder;
 use encoding_rs::Encoding;
 use chardetng::EncodingDetector;
 use zip_parser::{ compress, system, ZipArchive, CentralFileHeader };
-use util::{ Decoder, Crc32Checker, dos2time, path_join, path_open };
+use util::{ Decoder, Crc32Checker, dos2time, path_join, path_open, sanitize_setuid };
 
 
 /// unzipx - extract compressed files in a ZIP archive
@@ -170,7 +170,7 @@ fn do_file(
         use std::os::unix::fs::PermissionsExt;
 
         let perm = fs::Permissions::from_mode(cfh.ext_attrs >> 16);
-        fd.set_permissions(perm)?;
+        fd.set_permissions(sanitize_setuid(perm))?;
     }
 
     println!("  inflating: {}", path);

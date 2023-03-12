@@ -18,7 +18,7 @@ use util::{
 };
 
 
-/// unzipx - extract compressed files in a ZIP archive
+/// unzrip - extract compressed files in a ZIP archive
 #[derive(FromArgs)]
 struct Options {
     /// path of the ZIP archive(s).

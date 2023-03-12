@@ -2,18 +2,20 @@ mod util;
 
 use std::{ cmp, env, fs };
 use std::io::{ self, Read };
-use std::borrow::Cow;
-use anyhow::Context;
-use camino::{ Utf8Path as Path, Utf8PathBuf as PathBuf };
+use std::path::{ Path, PathBuf };
 use argh::FromArgs;
+use anyhow::Context;
+use bstr::ByteSlice;
+use encoding_rs::Encoding;
 use rayon::prelude::*;
 use memmap2::MmapOptions;
 use flate2::bufread::DeflateDecoder;
 use zstd::stream::read::Decoder as ZstdDecoder;
-use encoding_rs::Encoding;
-use chardetng::EncodingDetector;
 use zip_parser::{ compress, system, ZipArchive, CentralFileHeader };
-use util::{ Decoder, Crc32Checker, dos2time, path_join, path_open, sanitize_setuid };
+use util::{
+    Decoder, Crc32Checker, FilenameEncoding,
+    dos2time, path_join, path_open, sanitize_setuid
+};
 
 
 /// unzipx - extract compressed files in a ZIP archive
@@ -27,9 +29,15 @@ struct Options {
     #[argh(option, short = 'd')]
     exdir: Option<PathBuf>,
 
-    /// specify character set used to decode filename, which will be automatically detected by default.
+    /// specify character set used to decode filename,
+    /// which will be automatically detected by default.
     #[argh(option, short = 'O')]
-    charset: Option<String>
+    charset: Option<String>,
+
+    /// try to keep the original filename,
+    /// which will ignore the charset.
+    #[argh(switch)]
+    keep_origin_filename: bool
 }
 
 fn main() -> anyhow::Result<()> {
@@ -38,24 +46,26 @@ fn main() -> anyhow::Result<()> {
     let target_dir = if let Some(exdir) = options.exdir {
         exdir
     } else {
-        let path = env::current_dir()?;
-        PathBuf::from_path_buf(path).ok().context("must utf8 path")?
+        env::current_dir()?
     };
-    let charset = if let Some(label) = options.charset {
-        Some(Encoding::for_label(label.as_bytes()).context("invalid encoding label")?)
+    let encoding = if options.keep_origin_filename {
+        FilenameEncoding::Os
+    } else if let Some(label) = options.charset {
+        let encoding = Encoding::for_label(label.as_bytes()).context("invalid encoding label")?;
+        FilenameEncoding::Charset(encoding)
     } else {
-        None
+        FilenameEncoding::Auto
     };
 
     for file in options.file.iter() {
-        unzip(charset, &target_dir, file)?;
+        unzip(encoding, &target_dir, file)?;
     }
 
     Ok(())
 }
 
-fn unzip(charset: Option<&'static Encoding>, target_dir: &Path, path: &Path) -> anyhow::Result<()> {
-    println!("Archive: {}", path);
+fn unzip(encoding: FilenameEncoding, target_dir: &Path, path: &Path) -> anyhow::Result<()> {
+    println!("Archive: {}", path.display());
 
     let fd = fs::File::open(path)?;
     let buf = unsafe {
@@ -72,13 +82,13 @@ fn unzip(charset: Option<&'static Encoding>, target_dir: &Path, path: &Path) -> 
             acc
         }))?
         .par_iter()
-        .try_for_each(|cfh| do_entry(charset, &zip, &cfh, target_dir))?;
+        .try_for_each(|cfh| do_entry(encoding, &zip, &cfh, target_dir))?;
 
     Ok(())
 }
 
 fn do_entry(
-    charset: Option<&'static Encoding>,
+    encoding: FilenameEncoding,
     zip: &ZipArchive<'_>,
     cfh: &CentralFileHeader<'_>,
     target_dir: &Path
@@ -89,30 +99,15 @@ fn do_entry(
         anyhow::bail!("encrypt is not supported");
     }
 
-    let name = if let Some(encoding) = charset {
-        let (name, ..) = encoding.decode(cfh.name);
-        name
-    } else if let Ok(name) = std::str::from_utf8(cfh.name) {
-        Cow::Borrowed(name)
-    } else {
-        let mut encoding_detector = EncodingDetector::new();
-        encoding_detector.feed(cfh.name, true);
-        let (name, ..) = encoding_detector.guess(None, false).decode(cfh.name);
-        name
-    };
-    let path = Path::new(&*name);
+    let path = encoding.decode(cfh.name)?;
 
-    if !path.is_relative() {
-        anyhow::bail!("must relative path: {:?}", path);
-    }
-
-    if name.ends_with('/')
+    if cfh.name.ends_with_str("/")
         && cfh.method == compress::STORE
         && buf.is_empty()
     {
-        do_dir(target_dir, path)?
+        do_dir(target_dir, &path)?
     } else {
-        do_file(cfh, target_dir, path, buf)?;
+        do_file(cfh, target_dir, &path, buf)?;
     }
 
     Ok(())
@@ -127,9 +122,9 @@ fn do_dir(target_dir: &Path, path: &Path) -> anyhow::Result<()> {
         } else {
             Err(err)
         })
-        .with_context(|| path.to_owned())?;
+        .with_context(|| path.display().to_string())?;
 
-    println!("   creating: {}", path);
+    println!("   creating: {}", path.display());
 
     Ok(())
 }
@@ -159,7 +154,7 @@ fn do_file(
         filetime::FileTime::from_unix_time(unix_timestamp, nanos)
     };
 
-    let mut fd = path_open(&target).with_context(|| path.to_owned())?;
+    let mut fd = path_open(&target).with_context(|| path.display().to_string())?;
 
     io::copy(&mut reader, &mut fd)?;
 
@@ -173,7 +168,7 @@ fn do_file(
         fd.set_permissions(sanitize_setuid(perm))?;
     }
 
-    println!("  inflating: {}", path);
+    println!("  inflating: {}", path.display());
 
     Ok(())
 }

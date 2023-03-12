@@ -1,8 +1,11 @@
 use std::{ io, fs };
+use std::path::{ Path, PathBuf, Component };
+use std::borrow::Cow;
 use anyhow::Context;
+use bstr::ByteSlice;
+use encoding_rs::Encoding;
 use flate2::bufread::DeflateDecoder;
 use zstd::stream::read::Decoder as ZstdDecoder;
-use camino::{ Utf8Path as Path, Utf8PathBuf as PathBuf, Utf8Component as Component };
 
 
 pub enum Decoder<R: io::BufRead> {
@@ -57,6 +60,45 @@ impl<R: io::Read> io::Read for Crc32Checker<R> {
     }
 }
 
+#[derive(Clone, Copy)]
+pub enum FilenameEncoding {
+    Os,
+    Charset(&'static Encoding),
+    Auto
+}
+
+impl FilenameEncoding {
+    pub fn decode<'a>(self, name: &'a [u8]) -> anyhow::Result<Cow<'a, Path>> {
+        fn cow_str_to_path<'a>(name: Cow<'a, str>) -> Cow<'a, Path> {
+            match name {
+                Cow::Borrowed(name) => Cow::Borrowed(Path::new(name)),
+                Cow::Owned(name) => Cow::Owned(name.into())
+            }
+        }
+
+        match self {
+            FilenameEncoding::Os => {
+                name.to_path()
+                    .map(Cow::Borrowed)
+                    .context("Convert to os str failed")
+                    .with_context(|| String::from_utf8_lossy(name).into_owned())
+            },
+            FilenameEncoding::Charset(encoding) => {
+                let (name, ..) = encoding.decode(name);
+                Ok(cow_str_to_path(name))
+            },
+            FilenameEncoding::Auto => if let Ok(name) = std::str::from_utf8(name) {
+                Ok(Path::new(name).into())
+            } else {
+                let mut encoding_detector = chardetng::EncodingDetector::new();
+                encoding_detector.feed(name, true);
+                let (name, ..) = encoding_detector.guess(None, false).decode(name);
+                Ok(cow_str_to_path(name))
+            }
+        }
+    }
+}
+
 pub fn dos2time(dos_date: u16, dos_time: u16)
     -> anyhow::Result<time::PrimitiveDateTime>
 {
@@ -96,7 +138,7 @@ pub fn path_join(base: &Path, path: &Path) -> anyhow::Result<PathBuf> {
                 Component::ParentDir => {
                     depth = depth.checked_sub(1)
                         .context("filename over the path limit")
-                        .with_context(|| path.to_owned())?;
+                        .with_context(|| path.display().to_string())?;
                 },
                 Component::CurDir => ()
             }

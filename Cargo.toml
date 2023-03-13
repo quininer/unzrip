@@ -7,7 +7,7 @@ license = "MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [workspace]
-members = [ "zip-parser" ]
+members = [ "zip-parser", "memutils" ]
 
 [features]
 default = [ "zstd-sys" ]
@@ -20,6 +20,8 @@ zip-parser = { path = "zip-parser" }
 anyhow = "1"
 argh = "0.1"
 bstr = "1"
+memutils = { path = "memutils" }
+tinyvec = { version = "1", features = [ "std" ] }
 
 # fast
 rayon = "1"

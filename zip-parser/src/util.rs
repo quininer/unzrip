@@ -1,8 +1,9 @@
+use memutils::Buf;
+
 pub struct Eof;
 
-
 #[inline]
-pub fn take(input: &[u8], n: usize) -> Result<(&[u8], &[u8]), Eof> {
+pub fn take(input: Buf<'_>, n: usize) -> Result<(Buf<'_>, Buf<'_>), Eof> {
     if input.len() >= n {
         let (prefix, suffix) = input.split_at(n);
         Ok((suffix, prefix))
@@ -12,19 +13,37 @@ pub fn take(input: &[u8], n: usize) -> Result<(&[u8], &[u8]), Eof> {
 }
 
 #[inline]
-pub fn read_u16(input: &[u8]) -> Result<(&[u8], u16), Eof> {
+pub fn read_u16(input: Buf<'_>) -> Result<(Buf<'_>, u16), Eof> {
     let mut buf = [0; 2];
     let (input, output) = take(input, buf.len())?;
-    buf.copy_from_slice(output);
+    memutils::slice::copy_from_slice(&mut buf, output);
     let output = u16::from_le_bytes(buf);
     Ok((input, output))
 }
 
 #[inline]
-pub fn read_u32(input: &[u8]) -> Result<(&[u8], u32), Eof> {
+pub fn read_u32(input: Buf<'_>) -> Result<(Buf<'_>, u32), Eof> {
     let mut buf = [0; 4];
     let (input, output) = take(input, buf.len())?;
-    buf.copy_from_slice(output);
+    memutils::slice::copy_from_slice(&mut buf, output);
     let output = u32::from_le_bytes(buf);
     Ok((input, output))
+}
+
+pub fn rfind(haystack: Buf<'_>, needle: &[u8]) -> Option<usize> {
+    let first_byte = needle.first().copied()?;
+
+    for (i, _) in haystack.iter()
+        .enumerate()
+        .rev()
+        .filter(|(_, b)| b.get() == first_byte)
+    {
+        if let Some(subset) = haystack[i..].get(..needle.len()) {
+            if subset == needle {
+                return Some(i);
+            }
+        }
+    }
+
+    None
 }

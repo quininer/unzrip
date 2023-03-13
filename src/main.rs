@@ -9,12 +9,13 @@ use bstr::ByteSlice;
 use encoding_rs::Encoding;
 use rayon::prelude::*;
 use memmap2::MmapOptions;
-use flate2::bufread::DeflateDecoder;
+use flate2::read::DeflateDecoder;
 use zstd::stream::read::Decoder as ZstdDecoder;
 use zip_parser::{ compress, system, ZipArchive, CentralFileHeader };
+use memutils::Buf;
 use util::{
-    Decoder, Crc32Checker, FilenameEncoding,
-    dos2time, path_join, path_open, sanitize_setuid
+    ReadOnlyReader, Decoder, Crc32Checker, FilenameEncoding,
+    to_tiny_vec, dos2time, path_join, path_open, sanitize_setuid
 };
 
 
@@ -71,6 +72,7 @@ fn unzip(encoding: FilenameEncoding, target_dir: &Path, path: &Path) -> anyhow::
     let buf = unsafe {
         MmapOptions::new().map_copy_read_only(&fd)?
     };
+    let buf = memutils::slice::from_slice(&buf);
 
     let zip = ZipArchive::parse(&buf)?;
     let len: usize = zip.eocdr().cd_entries.try_into()?;
@@ -99,9 +101,10 @@ fn do_entry(
         anyhow::bail!("encrypt is not supported");
     }
 
-    let path = encoding.decode(cfh.name)?;
+    let name = to_tiny_vec(cfh.name);
+    let path = encoding.decode(&name)?;
 
-    if cfh.name.ends_with_str("/")
+    if name.ends_with_str("/")
         && cfh.method == compress::STORE
         && buf.is_empty()
     {
@@ -133,14 +136,15 @@ fn do_file(
     cfh: &CentralFileHeader,
     target_dir: &Path,
     path: &Path,
-    buf: &[u8]
+    buf: Buf<'_>
 ) -> anyhow::Result<()> {
     let target = path_join(target_dir, path)?;
 
+    let reader = ReadOnlyReader(buf);
     let reader = match cfh.method {
-        compress::STORE => Decoder::None(buf),
-        compress::DEFLATE => Decoder::Deflate(DeflateDecoder::new(buf)),
-        compress::ZSTD => Decoder::Zstd(ZstdDecoder::with_buffer(buf)?),
+        compress::STORE => Decoder::None(reader),
+        compress::DEFLATE => Decoder::Deflate(DeflateDecoder::new(reader)),
+        compress::ZSTD => Decoder::Zstd(ZstdDecoder::new(reader)?),
         _ => anyhow::bail!("compress method is not supported: {}", cfh.method)
     };
     // prevent zipbomb

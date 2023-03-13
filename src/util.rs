@@ -1,20 +1,34 @@
-use std::{ io, fs };
+use std::{ io, fs, cmp };
 use std::path::{ Path, PathBuf, Component };
 use std::borrow::Cow;
 use anyhow::Context;
 use bstr::ByteSlice;
 use encoding_rs::Encoding;
-use flate2::bufread::DeflateDecoder;
+use flate2::read::DeflateDecoder;
 use zstd::stream::read::Decoder as ZstdDecoder;
+use tinyvec::TinyVec;
+use memutils::Buf;
 
 
-pub enum Decoder<R: io::BufRead> {
-    None(R),
-    Deflate(DeflateDecoder<R>),
-    Zstd(ZstdDecoder<'static, R>)
+pub struct ReadOnlyReader<'a>(pub Buf<'a>);
+
+impl<'a> io::Read for ReadOnlyReader<'a> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let len = cmp::min(self.0.len(), buf.len());
+        let (x, y) = self.0.split_at(len);
+        memutils::slice::copy_from_slice(&mut buf[..len], x);
+        self.0 = y;
+        Ok(len)
+    }
 }
 
-impl<R: io::BufRead> io::Read for Decoder<R> {
+pub enum Decoder<R: io::Read> {
+    None(R),
+    Deflate(DeflateDecoder<R>),
+    Zstd(ZstdDecoder<'static, io::BufReader<R>>)
+}
+
+impl<R: io::Read> io::Read for Decoder<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
             Decoder::None(reader) => io::Read::read(reader, buf),
@@ -97,6 +111,15 @@ impl FilenameEncoding {
             }
         }
     }
+}
+
+pub fn to_tiny_vec(buf: Buf<'_>) -> TinyVec<[u8; 256]> {
+    let mut vec = TinyVec::new();
+    vec.reserve(buf.len());
+    for b in buf {
+        vec.push(b.get());
+    }
+    vec
 }
 
 pub fn dos2time(dos_date: u16, dos_time: u16)

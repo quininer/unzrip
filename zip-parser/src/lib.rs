@@ -3,8 +3,8 @@
 mod util;
 
 use thiserror::Error;
-use memchr::memmem::rfind;
-use util::{ Eof, take, read_u16, read_u32 };
+use util::{ Eof, take, read_u16, read_u32, rfind };
+use memutils::Buf;
 
 
 pub mod compress {
@@ -19,7 +19,6 @@ pub mod system {
 }
 
 #[non_exhaustive]
-#[derive(Debug)]
 pub struct EocdRecord<'a> {
     pub disk_nbr: u16,
     pub cd_start_disk: u16,
@@ -27,7 +26,7 @@ pub struct EocdRecord<'a> {
     pub cd_entries: u16,
     pub cd_size: u32,
     pub cd_offset: u32,
-    pub comment: &'a [u8]
+    pub comment: Buf<'a>
 }
 
 #[derive(Error, Debug)]
@@ -54,7 +53,7 @@ impl From<Eof> for Error {
 }
 
 impl EocdRecord<'_> {
-    fn find(buf: &[u8]) -> Result<EocdRecord<'_>, Error> {
+    fn find(buf: Buf<'_>) -> Result<EocdRecord<'_>, Error> {
         const EOCDR_SIGNATURE: &[u8; 4] = &[b'P', b'K', 5, 6];
         const MAX_BACK_OFFSET: usize = 1024 * 128;
 
@@ -93,7 +92,6 @@ impl EocdRecord<'_> {
 }
 
 #[non_exhaustive]
-#[derive(Debug)]
 pub struct CentralFileHeader<'a> {
     pub made_by_ver: u16,
     pub extract_ver: u16,
@@ -108,13 +106,13 @@ pub struct CentralFileHeader<'a> {
     pub int_attrs: u16,
     pub ext_attrs: u32,
     pub lfh_offset: u32,
-    pub name: &'a [u8],
-    pub extra: &'a [u8],
-    pub comment: &'a [u8]
+    pub name: Buf<'a>,
+    pub extra: Buf<'a>,
+    pub comment: Buf<'a>
 }
 
 impl CentralFileHeader<'_> {
-    fn parse(input: &[u8]) -> Result<(&[u8], CentralFileHeader<'_>), Error> {
+    fn parse(input: Buf<'_>) -> Result<(Buf<'_>, CentralFileHeader<'_>), Error> {
         const CFH_SIGNATURE: &[u8; 4] = &[b'P', b'K', 1, 2];
 
         let (input, expect_sig) = take(input, CFH_SIGNATURE.len())?;
@@ -166,7 +164,6 @@ impl CentralFileHeader<'_> {
 }
 
 #[non_exhaustive]
-#[derive(Debug)]
 pub struct LocalFileHeader<'a> {
     pub extract_ver: u16,
     pub gp_flag: u16,
@@ -176,12 +173,12 @@ pub struct LocalFileHeader<'a> {
     pub crc32: u32,
     pub comp_size: u32,
     pub uncomp_size: u32,
-    pub name: &'a [u8],
-    pub extra: &'a [u8]
+    pub name: Buf<'a>,
+    pub extra: Buf<'a>
 }
 
 impl LocalFileHeader<'_> {
-    fn parse(input: &[u8]) -> Result<(&[u8], LocalFileHeader<'_>), Error> {
+    fn parse(input: Buf<'_>) -> Result<(Buf<'_>, LocalFileHeader<'_>), Error> {
         const LFH_SIGNATURE: &[u8; 4] = &[b'P', b'K', 3, 4];
 
         let (input, expect_sig) = take(input, LFH_SIGNATURE.len())?;
@@ -220,12 +217,12 @@ impl LocalFileHeader<'_> {
 }
 
 pub struct ZipArchive<'a> {
-    buf: &'a [u8],
+    buf: Buf<'a>,
     eocdr: EocdRecord<'a>
 }
 
 impl ZipArchive<'_> {
-    pub fn parse(buf: &[u8]) -> Result<ZipArchive<'_>, Error> {
+    pub fn parse(buf: Buf<'_>) -> Result<ZipArchive<'_>, Error> {
         let eocdr = EocdRecord::find(buf)?;
 
         if eocdr.disk_nbr != 0
@@ -252,7 +249,7 @@ impl ZipArchive<'_> {
         Ok(ZipEntries { buf, count })
     }
 
-    pub fn read<'a>(&'a self, cfh: &CentralFileHeader) -> Result<(LocalFileHeader<'a>, &'a [u8]), Error> {
+    pub fn read<'a>(&'a self, cfh: &CentralFileHeader) -> Result<(LocalFileHeader<'a>, Buf<'_>), Error> {
         let offset: usize = cfh.lfh_offset.try_into()
             .map_err(|_| Error::OffsetOverflow)?;
         let buf = self.buf.get(offset..)
@@ -269,7 +266,7 @@ impl ZipArchive<'_> {
 }
 
 pub struct ZipEntries<'a> {
-    buf: &'a [u8],
+    buf: Buf<'a>,
     count: u16
 }
 

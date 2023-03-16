@@ -5,12 +5,15 @@ use anyhow::Context;
 use bstr::ByteSlice;
 use encoding_rs::Encoding;
 use flate2::bufread::DeflateDecoder;
+
+#[cfg(feature = "zstd-sys")]
 use zstd::stream::read::Decoder as ZstdDecoder;
 
 
 pub enum Decoder<R: io::BufRead> {
     None(R),
     Deflate(DeflateDecoder<R>),
+    #[cfg(feature = "zstd-sys")]
     Zstd(ZstdDecoder<'static, R>)
 }
 
@@ -19,6 +22,7 @@ impl<R: io::BufRead> io::Read for Decoder<R> {
         match self {
             Decoder::None(reader) => io::Read::read(reader, buf),
             Decoder::Deflate(reader) => io::Read::read(reader, buf),
+            #[cfg(feature = "zstd-sys")]
             Decoder::Zstd(reader) => io::Read::read(reader, buf)
         }
     }

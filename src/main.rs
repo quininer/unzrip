@@ -10,13 +10,14 @@ use encoding_rs::Encoding;
 use rayon::prelude::*;
 use memmap2::MmapOptions;
 use flate2::bufread::DeflateDecoder;
-use zstd::stream::read::Decoder as ZstdDecoder;
 use zip_parser::{ compress, system, ZipArchive, CentralFileHeader };
 use util::{
     Decoder, Crc32Checker, FilenameEncoding,
     dos2time, path_join, path_open, sanitize_setuid
 };
 
+#[cfg(feature = "zstd-sys")]
+use zstd::stream::read::Decoder as ZstdDecoder;
 
 /// unzrip - extract compressed files in a ZIP archive
 #[derive(FromArgs)]
@@ -144,6 +145,7 @@ fn do_file(
     let reader = match cfh.method {
         compress::STORE => Decoder::None(buf),
         compress::DEFLATE => Decoder::Deflate(DeflateDecoder::new(buf)),
+        #[cfg(feature = "zstd-sys")]
         compress::ZSTD => Decoder::Zstd(ZstdDecoder::with_buffer(buf)?),
         _ => anyhow::bail!("compress method is not supported: {}", cfh.method)
     };

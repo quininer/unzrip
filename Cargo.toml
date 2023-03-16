@@ -9,6 +9,9 @@ license = "MIT"
 [workspace]
 members = [ "zip-parser" ]
 
+[features]
+default = [ "zstd-sys" ]
+zstd-sys = [ "zstd" ]
 
 [dependencies]
 zip-parser = { path = "zip-parser" }
@@ -27,7 +30,7 @@ crc32fast = "1"
 
 # compress
 flate2 = "1"
-zstd = { version = "0.12", features = [ "pkg-config" ] }
+zstd = { version = "0.12", features = [ "pkg-config" ], optional = true }
 
 # encoding
 encoding_rs = "0.8"

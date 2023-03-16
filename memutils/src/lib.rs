@@ -1,4 +1,5 @@
 #![no_std]
+#![cfg_attr(unzrip_i_am_nightly_and_i_want_fast, feature(core_intrinsics))]
 
 use core::cell::UnsafeCell;
 
@@ -35,6 +36,19 @@ pub mod slice {
 
         for (src, dst) in src.iter().zip(dst) {
             *dst = src.get();
+        }
+    }
+
+    #[cfg(unzrip_i_am_nightly_and_i_want_fast)]
+    pub fn copy_from_slice_nightly<T: Copy>(dst: &mut [T], src: &[ReadOnlyCell<T>]) {
+        assert_eq!(src.len(), dst.len());
+
+        unsafe {
+            core::intrinsics::volatile_copy_nonoverlapping_memory(
+                dst.as_mut_ptr(),
+                src.as_ptr().cast(),
+                src.len()
+            );
         }
     }
 }

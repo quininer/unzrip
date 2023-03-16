@@ -47,3 +47,9 @@ zip = { version = "0.6", default-features = false, features = [ "deflate" ] }
 tempfile = "3"
 assert_cmd = "2"
 walkdir = "2"
+criterion = "0.4"
+
+[[bench]]
+name = "decomp-with-volatile"
+path = "benches/decomp.rs"
+harness = false

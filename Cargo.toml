@@ -36,3 +36,9 @@ chardetng = "0.1"
 # time
 time = "0.3"
 filetime = "0.2"
+
+[dev-dependencies]
+zip = { version = "0.6", default-features = false, features = [ "deflate" ] }
+tempfile = "3"
+assert_cmd = "2"
+walkdir = "2"

@@ -99,14 +99,18 @@ fn do_entry(
         anyhow::bail!("encrypt is not supported");
     }
 
-    let path = encoding.decode(cfh.name)?;
+    let name = cfh.name;
 
-    if cfh.name.ends_with_str("/")
+    if (name.ends_with_str("/") || name.ends_with_str("\\"))
         && cfh.method == compress::STORE
         && buf.is_empty()
     {
+        #[cfg(unix)]
+        let name = name.trim_end_with(|c| c == '\\');
+        let path = encoding.decode(name)?;
         do_dir(target_dir, &path)?
     } else {
+        let path = encoding.decode(&name)?;
         do_file(cfh, target_dir, &path, buf)?;
     }
 

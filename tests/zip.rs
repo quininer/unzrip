@@ -157,7 +157,7 @@ fn test_encoding_filename() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 #[test]
 fn test_unix_filename() -> anyhow::Result<()> {
     let dir = tempdir()?;

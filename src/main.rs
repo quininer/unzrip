@@ -10,10 +10,10 @@ use encoding_rs::Encoding;
 use rayon::prelude::*;
 use memmap2::MmapOptions;
 use flate2::bufread::DeflateDecoder;
-use zip_parser::{ compress, system, ZipArchive, CentralFileHeader };
+use zip_parser::{ compress, ZipArchive, CentralFileHeader };
 use util::{
     Decoder, Crc32Checker, FilenameEncoding,
-    dos2time, path_join, path_open, sanitize_setuid
+    dos2time, path_join, path_open
 };
 
 #[cfg(feature = "zstd-sys")]
@@ -167,11 +167,11 @@ fn do_file(
     filetime::set_file_handle_times(&fd, None, Some(mtime))?;
 
     #[cfg(unix)]
-    if cfh.ext_attrs != 0 && cfh.made_by_ver >> 8 == system::UNIX {
+    if cfh.ext_attrs != 0 && cfh.made_by_ver >> 8 == zip_parser::system::UNIX {
         use std::os::unix::fs::PermissionsExt;
 
         let perm = fs::Permissions::from_mode(cfh.ext_attrs >> 16);
-        fd.set_permissions(sanitize_setuid(perm))?;
+        fd.set_permissions(util::sanitize_setuid(perm))?;
     }
 
     println!("  inflating: {}", path.display());

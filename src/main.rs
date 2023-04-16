@@ -59,7 +59,8 @@ fn main() -> anyhow::Result<()> {
     };
 
     for file in options.file.iter() {
-        unzip(encoding, &target_dir, file)?;
+        unzip(encoding, &target_dir, file)
+            .with_context(|| file.display().to_string())?;
     }
 
     Ok(())
@@ -94,7 +95,7 @@ fn do_entry(
     cfh: &CentralFileHeader<'_>,
     target_dir: &Path
 ) -> anyhow::Result<()> {
-    let (_lfh, buf) = zip.read(cfh)?;
+    let (_lfh, buf) = zip.read(cfh).context("read entry failed")?;
 
     if cfh.gp_flag & 1 != 0 {
         anyhow::bail!("encrypt is not supported");

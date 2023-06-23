@@ -23,7 +23,7 @@ bstr = "1"
 
 # fast
 rayon = "1"
-memmap2 = "0.5"
+memmap2 = "0.7"
 
 # check
 crc32fast = "1"

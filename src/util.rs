@@ -1,19 +1,18 @@
-use std::{ io, fs, cmp };
+use std::{ fs, cmp };
+use std::io::{ self, Read };
 use std::path::{ Path, PathBuf, Component };
 use std::borrow::Cow;
 use anyhow::Context;
 use bstr::ByteSlice;
 use encoding_rs::Encoding;
-use flate2::read::DeflateDecoder;
-#[cfg(feature = "zstd-sys")]
-use zstd::stream::read::Decoder as ZstdDecoder;
 use tinyvec::TinyVec;
 use memutils::Buf;
 
 
 pub struct ReadOnlyReader<'a>(pub Buf<'a>);
 
-impl<'a> io::Read for ReadOnlyReader<'a> {
+impl<'a> Read for ReadOnlyReader<'a> {
+    #[inline]
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let len = cmp::min(self.0.len(), buf.len());
         let (x, y) = self.0.split_at(len);
@@ -26,24 +25,6 @@ impl<'a> io::Read for ReadOnlyReader<'a> {
 
         self.0 = y;
         Ok(len)
-    }
-}
-
-pub enum Decoder<R: io::Read> {
-    None(R),
-    Deflate(DeflateDecoder<R>),
-    #[cfg(feature = "zstd-sys")]
-    Zstd(ZstdDecoder<'static, io::BufReader<R>>)
-}
-
-impl<R: io::Read> io::Read for Decoder<R> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        match self {
-            Decoder::None(reader) => io::Read::read(reader, buf),
-            Decoder::Deflate(reader) => io::Read::read(reader, buf),
-            #[cfg(feature = "zstd-sys")]
-            Decoder::Zstd(reader) => io::Read::read(reader, buf)
-        }
     }
 }
 
@@ -62,9 +43,9 @@ impl<R> Crc32Checker<R> {
     }
 }
 
-impl<R: io::Read> io::Read for Crc32Checker<R> {
+impl<R: Read> Read for Crc32Checker<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let n = io::Read::read(&mut self.reader, buf)?;
+        let n = self.reader.read(buf)?;
 
         if n == 0 {
             let crc = self.hasher.clone().finalize();
@@ -124,10 +105,7 @@ impl FilenameEncoding {
 
 pub fn to_tiny_vec(buf: Buf<'_>) -> TinyVec<[u8; 256]> {
     let mut vec = TinyVec::new();
-    vec.reserve(buf.len());
-    for b in buf {
-        vec.push(b.get());
-    }
+    io::copy(&mut ReadOnlyReader(buf), &mut vec).unwrap();
     vec
 }
 

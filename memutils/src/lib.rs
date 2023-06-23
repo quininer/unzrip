@@ -10,6 +10,7 @@ pub type Buf<'a> = &'a [ReadOnlyCell<u8>];
 pub struct ReadOnlyCell<T>(UnsafeCell<T>);
 
 impl<T: Copy> ReadOnlyCell<T> {
+    #[inline]
     pub fn get(&self) -> T {
         unsafe {
             self.0.get().read_volatile()
@@ -31,6 +32,7 @@ pub mod slice {
         }
     }
 
+    #[inline]
     pub fn copy_from_slice<T: Copy>(dst: &mut [T], src: &[ReadOnlyCell<T>]) {
         assert_eq!(src.len(), dst.len());
 
@@ -40,6 +42,7 @@ pub mod slice {
     }
 
     #[cfg(unzrip_i_am_nightly_and_i_want_fast)]
+    #[inline]
     pub fn copy_from_slice_nightly<T: Copy>(dst: &mut [T], src: &[ReadOnlyCell<T>]) {
         assert_eq!(src.len(), dst.len());
 
@@ -50,6 +53,10 @@ pub mod slice {
                 src.len()
             );
         }
+    }
+
+    pub unsafe fn as_slice<T>(b: &[ReadOnlyCell<T>]) -> &[T] {
+        slice::from_raw_parts(b.as_ptr().cast(), b.len())
     }
 }
 

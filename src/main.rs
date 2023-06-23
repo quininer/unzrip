@@ -9,16 +9,13 @@ use bstr::ByteSlice;
 use encoding_rs::Encoding;
 use rayon::prelude::*;
 use memmap2::MmapOptions;
-use flate2::read::DeflateDecoder;
 use zip_parser::{ compress, ZipArchive, CentralFileHeader };
 use memutils::Buf;
 use util::{
-    ReadOnlyReader, Decoder, Crc32Checker, FilenameEncoding,
+    ReadOnlyReader, Crc32Checker, FilenameEncoding,
     to_tiny_vec, dos2time, path_join, path_open,
 };
 
-#[cfg(feature = "zstd-sys")]
-use zstd::stream::read::Decoder as ZstdDecoder;
 
 /// unzrip - extract compressed files in a ZIP archive
 #[derive(FromArgs)]
@@ -39,20 +36,24 @@ struct Options {
     /// try to keep the original filename,
     /// which will ignore the charset.
     #[argh(switch)]
-    keep_origin_filename: bool
+    keep_origin_filename: bool,
+
+    /// try a faster method, but it may not be stable
+    #[argh(switch)]
+    fast: bool
 }
 
 fn main() -> anyhow::Result<()> {
     let options: Options = argh::from_env();
 
-    let target_dir = if let Some(exdir) = options.exdir {
+    let target_dir = if let Some(exdir) = options.exdir.clone() {
         exdir
     } else {
         env::current_dir()?
     };
     let encoding = if options.keep_origin_filename {
         FilenameEncoding::Os
-    } else if let Some(label) = options.charset {
+    } else if let Some(label) = options.charset.clone() {
         let encoding = Encoding::for_label(label.as_bytes()).context("invalid encoding label")?;
         FilenameEncoding::Charset(encoding)
     } else {
@@ -60,16 +61,22 @@ fn main() -> anyhow::Result<()> {
     };
 
     for file in options.file.iter() {
-        unzip(encoding, &target_dir, file)?;
+        unzip(&options, encoding, &target_dir, file)?;
     }
 
     Ok(())
 }
 
-fn unzip(encoding: FilenameEncoding, target_dir: &Path, path: &Path) -> anyhow::Result<()> {
+fn unzip(options: &Options, encoding: FilenameEncoding, target_dir: &Path, path: &Path)
+    -> anyhow::Result<()>
+{
     println!("Archive: {}", path.display());
 
     let fd = fs::File::open(path)?;
+
+    // # Safety
+    //
+    // mmap operation
     let buf = unsafe {
         MmapOptions::new().map_copy_read_only(&fd)?
     };
@@ -85,12 +92,13 @@ fn unzip(encoding: FilenameEncoding, target_dir: &Path, path: &Path) -> anyhow::
             acc
         }))?
         .par_iter()
-        .try_for_each(|cfh| do_entry(encoding, &zip, &cfh, target_dir))?;
+        .try_for_each(|cfh| do_entry(options, encoding, &zip, &cfh, target_dir))?;
 
     Ok(())
 }
 
 fn do_entry(
+    options: &Options,
     encoding: FilenameEncoding,
     zip: &ZipArchive<'_>,
     cfh: &CentralFileHeader<'_>,
@@ -114,7 +122,7 @@ fn do_entry(
         do_dir(target_dir, &path)?
     } else {
         let path = encoding.decode(&name)?;
-        do_file(cfh, target_dir, &path, buf)?;
+        do_file(options, cfh, target_dir, &path, buf)?;
     }
 
     Ok(())
@@ -137,6 +145,7 @@ fn do_dir(target_dir: &Path, path: &Path) -> anyhow::Result<()> {
 }
 
 fn do_file(
+    options: &Options,
     cfh: &CentralFileHeader,
     target_dir: &Path,
     path: &Path,
@@ -145,12 +154,37 @@ fn do_file(
     let target = path_join(target_dir, path)?;
 
     let reader = ReadOnlyReader(buf);
-    let reader = match cfh.method {
-        compress::STORE => Decoder::None(reader),
-        compress::DEFLATE => Decoder::Deflate(DeflateDecoder::new(reader)),
+    let reader: Box<dyn Read> = if options.fast {
+        use flate2::bufread::DeflateDecoder;
         #[cfg(feature = "zstd-sys")]
-        compress::ZSTD => Decoder::Zstd(ZstdDecoder::new(reader)?),
-        _ => anyhow::bail!("compress method is not supported: {}", cfh.method)
+        use zstd::stream::read::Decoder as ZstdDecoder;
+
+        // # Safety
+        //
+        // Assume that the file is stable and will not be modified
+        let reader = unsafe {
+            memutils::slice::as_slice(reader.0)
+        };
+
+        match cfh.method {
+            compress::STORE => Box::new(reader),
+            compress::DEFLATE => Box::new(DeflateDecoder::new(reader)),
+            #[cfg(feature = "zstd-sys")]
+            compress::ZSTD => Box::new(ZstdDecoder::with_buffer(reader)?),
+            _ => anyhow::bail!("compress method is not supported: {}", cfh.method)
+        }
+    } else {
+        use flate2::read::DeflateDecoder;
+        #[cfg(feature = "zstd-sys")]
+        use zstd::stream::read::Decoder as ZstdDecoder;
+
+        match cfh.method {
+            compress::STORE => Box::new(reader),
+            compress::DEFLATE => Box::new(DeflateDecoder::new(reader)),
+            #[cfg(feature = "zstd-sys")]
+            compress::ZSTD => Box::new(ZstdDecoder::new(reader)?),
+            _ => anyhow::bail!("compress method is not supported: {}", cfh.method)
+        }
     };
     // prevent zipbomb
     let reader = reader.take(cfh.uncomp_size.into());

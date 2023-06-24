@@ -159,9 +159,20 @@ pub fn path_join(base: &Path, path: &Path) -> anyhow::Result<PathBuf> {
     Ok(base.join(path))
 }
 
-pub fn path_open(path: &Path) -> io::Result<fs::File> {
+pub fn path_open(path: &Path, overwrite: bool) -> io::Result<fs::File> {
     let mut open_options = fs::File::options();
     open_options.write(true).append(true).create_new(true);
+
+    // The overwrites are only used to delete exist files
+    // and do not deal with conditional race.
+    if overwrite {
+        fs::remove_file(path)
+            .or_else(|err| if err.kind() == io::ErrorKind::NotFound {
+                Ok(())
+            } else {
+                Err(err)
+            })?;
+    }
 
     match open_options.open(path) {
         Ok(fd) => Ok(fd),

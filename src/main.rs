@@ -33,14 +33,18 @@ struct Options {
     #[argh(option, short = 'O')]
     charset: Option<String>,
 
+    /// overwrite files WITHOUT prompting
+    #[argh(switch, short = 'o')]
+    overwrite: bool,
+
+    /// try a faster method, but it may not be stable
+    #[argh(switch)]
+    fast: bool,
+
     /// try to keep the original filename,
     /// which will ignore the charset.
     #[argh(switch)]
     keep_origin_filename: bool,
-
-    /// try a faster method, but it may not be stable
-    #[argh(switch)]
-    fast: bool
 }
 
 fn main() -> anyhow::Result<()> {
@@ -197,7 +201,7 @@ fn do_file(
         filetime::FileTime::from_unix_time(unix_timestamp, nanos)
     };
 
-    let mut fd = path_open(&target).with_context(|| path.display().to_string())?;
+    let mut fd = path_open(&target, options.overwrite).with_context(|| path.display().to_string())?;
 
     io::copy(&mut reader, &mut fd)?;
 

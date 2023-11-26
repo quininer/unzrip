@@ -30,6 +30,15 @@ pub fn read_u32(input: Buf<'_>) -> Result<(Buf<'_>, u32), Eof> {
     Ok((input, output))
 }
 
+#[inline]
+pub fn read_u64(input: Buf<'_>) -> Result<(Buf<'_>, u64), Eof> {
+    let mut buf = [0; 8];
+    let (input, output) = take(input, buf.len())?;
+    memutils::slice::copy_from_slice(&mut buf, output);
+    let output = u64::from_le_bytes(buf);
+    Ok((input, output))
+}
+
 pub fn rfind(haystack: Buf<'_>, needle: &[u8]) -> Option<usize> {
     let first_byte = needle.first().copied()?;
 

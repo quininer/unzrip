@@ -25,14 +25,14 @@ tinyvec = { version = "1", features = [ "std" ] }
 
 # fast
 rayon = "1"
-memmap2 = "0.7"
+memmap2 = "0.9"
 
 # check
 crc32fast = "1"
 
 # compress
 flate2 = "1"
-zstd = { version = "0.12", features = [ "pkg-config" ], optional = true }
+zstd = { version = "0.13", features = [ "pkg-config" ], optional = true }
 
 # encoding
 encoding_rs = "0.8"
@@ -47,7 +47,7 @@ zip = { version = "0.6", default-features = false, features = [ "deflate" ] }
 tempfile = "3"
 assert_cmd = "2"
 walkdir = "2"
-criterion = "0.4"
+criterion = "0.5"
 
 [[bench]]
 name = "decomp-with-volatile"

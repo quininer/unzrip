@@ -87,7 +87,7 @@ fn unzip(options: &Options, encoding: FilenameEncoding, target_dir: &Path, path:
     let buf = memutils::slice::from_slice(&buf);
 
     let zip = ZipArchive::parse(&buf)?;
-    let len: usize = zip.eocdr().cd_entries.try_into()?;
+    let len: usize = zip.eocdr().cd_entries().context("cd entries overwrite")?;
     let len = cmp::min(len, 128);
 
     zip.entries()?

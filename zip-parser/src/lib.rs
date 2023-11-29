@@ -328,32 +328,22 @@ impl CentralFileHeader<'_> {
             }
         };
 
-        let uncomp_size = match (zip64_extbuf, uncomp_size) {
-            (Some(input), u32::MAX) => {
-                let (input, n) = read_u64(input)?;
-                zip64_extbuf = Some(input);
-                n
-            },
-            (_, n) => n.into()
-        };
+        macro_rules! checkext {
+            ( $value:expr ) => {
+                match (zip64_extbuf, $value) {
+                    (Some(input), u32::MAX) => {
+                        let (input, n) = read_u64(input)?;
+                        zip64_extbuf = Some(input);
+                        n
+                    },
+                    (_, n) => n.into()
+                }
+            }
+        }
 
-        let comp_size = match (zip64_extbuf, comp_size) {
-            (Some(input), u32::MAX) => {
-                let (input, n) = read_u64(input)?;
-                zip64_extbuf = Some(input);
-                n
-            },
-            (_, n) => n.into()
-        };
-
-        let lfh_offset = match (zip64_extbuf, lfh_offset) {
-            (Some(input), u32::MAX) => {
-                let (input, n) = read_u64(input)?;
-                zip64_extbuf = Some(input);
-                n
-            },
-            (_, n) => n.into()
-        };
+        let uncomp_size = checkext!(uncomp_size);
+        let comp_size = checkext!(comp_size);
+        let lfh_offset = checkext!(lfh_offset);
 
         // more ?
         let _zip64_extbuf = zip64_extbuf;

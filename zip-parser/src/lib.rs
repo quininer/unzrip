@@ -63,17 +63,6 @@ impl EocdRecord<'_> {
     }
 }
 
-/*
-      end of central dir signature    4 bytes  (0x06054b50)
-      number of this disk             2 bytes
-      number of the disk with the start of the central directory  2 bytes
-      total number of entries in the central directory on this disk  2 bytes
-      total number of entries in the central directory           2 bytes
-      size of the central directory   4 bytes
-      offset of start of central directory with respect to the starting disk number        4 bytes
-      .ZIP file comment length        2 bytes
-      .ZIP file comment       (variable size)
- */
 pub struct EocdRecord32<'a> {
     pub sig: u32,
     pub disk_nbr: u16,
@@ -130,22 +119,6 @@ impl EocdRecord32<'_> {
     }
 }
 
-/*
-
-        zip64 end of central dir
-        signature                       4 bytes  (0x06064b50)
-        size of zip64 end of central
-        directory record                8 bytes
-        version made by                 2 bytes
-        version needed to extract       2 bytes
-        number of this disk             4 bytes
-        number of the disk with the start of the central directory  4 bytes
-        total number of entries in the central directory on this disk  8 bytes
-        total number of entries in the central directory               8 bytes
-        size of the central directory   8 bytes
-        offset of start of central directory with respect to the starting disk number        8 bytes
-        zip64 extensible data sector    (variable size)
- */
 pub struct EocdRecord64<'buf> {
     pub sig: u32,
     pub size: usize,
@@ -160,18 +133,6 @@ pub struct EocdRecord64<'buf> {
     pub ext_data_sector: Buf<'buf>
 }
 
-/*
-   4.3.15 Zip64 end of central directory locator
-
-      zip64 end of central dir locator
-      signature                       4 bytes  (0x07064b50)
-      number of the disk with the
-      start of the zip64 end of
-      central directory               4 bytes
-      relative offset of the zip64
-      end of central directory record 8 bytes
-      total number of disks           4 bytes
- */
 #[allow(dead_code)]
 struct EocdRecord64Locator {
     sig: u32,

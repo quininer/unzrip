@@ -283,7 +283,9 @@ pub struct CentralFileHeader<'a> {
 }
 
 impl CentralFileHeader<'_> {
-    fn parse(input: Buf<'_>) -> Result<(Buf<'_>, CentralFileHeader<'_>), Error> {
+    fn parse(input: Buf<'_>, is_zip64: bool)
+        -> Result<(Buf<'_>, CentralFileHeader<'_>), Error>
+    {
         const CFH_SIGNATURE: &[u8; 4] = &[b'P', b'K', 1, 2];
         const ID_ZIP64_EXTENDED_INFO: u16 = 0x0001;
 
@@ -331,7 +333,7 @@ impl CentralFileHeader<'_> {
         macro_rules! checkext {
             ( $value:expr ) => {
                 match (zip64_extbuf, $value) {
-                    (Some(input), u32::MAX) => {
+                    (Some(input), u32::MAX) if is_zip64 => {
                         let (input, n) = read_u64(input)?;
                         zip64_extbuf = Some(input);
                         n
@@ -456,8 +458,9 @@ impl ZipArchive<'_> {
             .ok_or(Error::Eof)?;
         let count = self.eocdr.cd_entries()
             .ok_or(Error::OffsetOverflow)?;
+        let is_zip64 = matches!(self.eocdr, EocdRecord::Zip64(_));
 
-        Ok(ZipEntries { buf, count })
+        Ok(ZipEntries { buf, count, is_zip64 })
     }
 
     pub fn read<'a>(&'a self, cfh: &CentralFileHeader) -> Result<(LocalFileHeader<'a>, Buf<'_>), Error> {
@@ -477,7 +480,8 @@ impl ZipArchive<'_> {
 
 pub struct ZipEntries<'a> {
     buf: Buf<'a>,
-    count: usize
+    count: usize,
+    is_zip64: bool
 }
 
 impl<'a> Iterator for ZipEntries<'a> {
@@ -487,7 +491,7 @@ impl<'a> Iterator for ZipEntries<'a> {
         let new_count = self.count.checked_sub(1)?;
 
         let input = self.buf;
-        let (input, cfh) = match CentralFileHeader::parse(input) {
+        let (input, cfh) = match CentralFileHeader::parse(input, self.is_zip64) {
             Ok(output) => output,
             Err(err) => return Some(Err(err))
         };
